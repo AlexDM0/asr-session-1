@@ -1,7 +1,14 @@
 # AI Orchestrator, session 1
 
-One folder per workshop round. Open each folder on its own in VS Code, never this root folder, so the
-agent does not see your earlier rounds.
+One folder per workshop round. Run the setup in this folder first: it removes this folder's `.git`
+and makes each round's folder its own git repository, so the agent does not see your earlier rounds.
+
+| On | Do |
+|---|---|
+| Windows | Double-click `setup.cmd` |
+| macOS or Linux | Run `./setup.sh` in a terminal |
+
+Then open each folder on its own in VS Code, never this root folder.
 
 | Folder | Round |
 |---|---|
