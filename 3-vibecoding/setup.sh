@@ -5,10 +5,12 @@
 #
 #   1. uv: checks that it works, installs it with the official installer when it is missing
 #   2. the Spec Kit CLI from GitHub at the pinned tag: uv tool install specify-cli --from <tag archive>
-#   3. puts specify on the PATH of new terminals and prints the next step: specify init my-app --integration copilot
+#   3. puts specify on the PATH of new terminals and sets up Spec Kit in this folder:
+#      specify init . --integration copilot --script py
 #
 # Safe to run again: a working CLI at the pinned version is left alone; anything else, another
-# version or a broken install, is replaced by the pinned one. On Git Bash it hands off to setup.ps1,
+# version or a broken install, is replaced by the pinned one. A folder that already has .specify is
+# left alone too. On Git Bash it hands off to setup.ps1,
 # so Windows has one installer.
 #
 # Usage: ./setup.sh
@@ -220,17 +222,24 @@ else
   fi
 fi
 
-# --- 3. Next step --------------------------------------------------------------
-step "3/3 Next step"
+# --- 3. Spec Kit in this folder ----------------------------------------------------
+step "3/3 Spec Kit in this folder"
+# A second run leaves .specify alone: init --force would overwrite a constitution the participant already wrote.
+if [ -d ".specify" ]; then
+  ok "This folder already has .specify, so specify init is skipped."
+else
+  info "Running specify init . --integration copilot --script py..."
+  # --force: the folder already holds this README and the setup files, and init refuses a folder that
+  # is not empty unless it can ask. It only adds .github/ and .specify/.
+  if ! "$SPECIFY_COMMAND" init . --integration copilot --script py --force; then
+    error_message "specify init did not finish."
+    info "Run it yourself in this folder:"
+    echo "    $SPECIFY_INVOCATION init . --integration copilot --script py --force"
+    exit 1
+  fi
+fi
 ok "Spec Kit is ready."
 if [ "$NEEDS_NEW_TERMINAL" = "1" ]; then
-  info "Open a new terminal (in VS Code: quit VS Code and start it again), go to the folder where your project should live and run:"
-else
-  info "Go to the folder where your project should live and run:"
+  info "specify works in new terminals (in VS Code: quit VS Code and start it again)."
 fi
-echo "    $SPECIFY_INVOCATION init my-app --integration copilot"
-if [ "$SPECIFY_INVOCATION" = "specify" ] && [ "$NEEDS_NEW_TERMINAL" = "1" ]; then
-  info "Or, in a terminal that does not find specify yet:"
-  echo "    \"$SPECIFY_COMMAND\" init my-app --integration copilot"
-fi
-info "Then open the new my-app folder in VS Code and open Copilot Chat in agent mode."
+info "Open this folder in VS Code and open Copilot Chat in agent mode."

@@ -6,10 +6,12 @@
 .DESCRIPTION
   1. uv: checks that it works, installs a pinned uv release from GitHub when it is missing
   2. the Spec Kit CLI from GitHub at the pinned tag: uv tool install specify-cli --from <tag archive>
-  3. puts specify on the PATH of new windows and prints the next step: specify init my-app --integration copilot
+  3. puts specify on the PATH of new windows and sets up Spec Kit in this folder:
+     specify init . --integration copilot --script py
 
   Safe to run again: a working CLI at the pinned version is left alone; anything else, another
-  version or a broken install, is replaced by the pinned one. Works in Windows PowerShell 5.1 and
+  version or a broken install, is replaced by the pinned one. A folder that already has .specify
+  is left alone too. Works in Windows PowerShell 5.1 and
   PowerShell 7. Deliberately pure ASCII, so 5.1 parses it without a BOM. setup.cmd next to this
   file starts it with the execution policy bypassed; setup.sh hands off to it on Git Bash.
 
@@ -346,20 +348,29 @@ function Invoke-Setup {
     }
     if (-not (Test-PathListContains $specifyDirectory $script:StartingPath)) { $needsNewWindow = $true }
 
-    # --- 3. Next step --------------------------------------------------------
-    Write-Step '3/3 Next step'
+    # --- 3. Spec Kit in this folder -------------------------------------------
+    Write-Step '3/3 Spec Kit in this folder'
+    # A second run leaves .specify alone: init --force would overwrite a constitution the participant already wrote.
+    if (Test-Path -LiteralPath '.specify') {
+        Write-Ok 'This folder already has .specify, so specify init is skipped.'
+    } else {
+        Write-Info 'Running specify init . --integration copilot --script py...'
+        # --force: the folder already holds this README and the setup files, and init refuses a folder
+        # that is not empty unless it can ask. It only adds .github\ and .specify\.
+        $global:LASTEXITCODE = 1
+        & $specifyCommandPath init . --integration copilot --script py --force | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Write-ErrorMessage 'specify init did not finish.'
+            Write-Info 'Run it yourself in this folder:'
+            Write-Host "    $specifyInvocation init . --integration copilot --script py --force"
+            $script:SetupExitCode = 1; return
+        }
+    }
     Write-Ok 'Spec Kit is ready.'
     if ($needsNewWindow) {
-        Write-Info 'Open a new terminal (in VS Code: close every VS Code window and start it again), go to the folder where your project should live and run:'
-    } else {
-        Write-Info 'Open a terminal, go to the folder where your project should live and run:'
+        Write-Info 'specify works in new terminals (in VS Code: close every VS Code window and start it again).'
     }
-    Write-Host "    $specifyInvocation init my-app --integration copilot"
-    if ($specifyInvocation -eq 'specify' -and $needsNewWindow) {
-        Write-Info 'Or, in a PowerShell terminal that does not find specify yet:'
-        Write-Host "    & `"$specifyCommandPath`" init my-app --integration copilot"
-    }
-    Write-Info 'Then open the new my-app folder in VS Code and open Copilot Chat in agent mode.'
+    Write-Info 'Open this folder in VS Code and open Copilot Chat in agent mode.'
 }
 
 # Run from this script's own folder, so a relative path never lands somewhere unexpected.

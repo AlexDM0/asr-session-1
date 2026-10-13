@@ -6,8 +6,8 @@
 |---|---|
 | Install Spec Kit | Windows: double-click `setup.cmd`. macOS, Linux or Git Bash: `./setup.sh` |
 | Or, with uv already installed | `uv tool install --force specify-cli --from https://github.com/github/spec-kit/archive/refs/tags/v1.1.3.zip` |
-| Make your project | `specify init my-app --integration copilot` |
-| Open it | Open the new `my-app` folder in VS Code, then Copilot Chat in agent mode |
+| Set up this folder (the setup script does this) | `specify init . --integration copilot --script py --force` |
+| Open it | Open this folder in VS Code, then Copilot Chat in agent mode |
 
 ## The commands, in order
 

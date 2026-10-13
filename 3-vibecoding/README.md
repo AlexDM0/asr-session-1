@@ -17,13 +17,13 @@ If you already have uv, you can install it yourself instead:
 uv tool install --force specify-cli --from https://github.com/github/spec-kit/archive/refs/tags/v1.1.3.zip
 ```
 
-Then make your project in the folder where it should live:
+The setup script then sets up Spec Kit in this folder. If you installed the CLI yourself, run this in this folder:
 
 ```bash
-specify init my-app --integration copilot
+specify init . --integration copilot --script py --force
 ```
 
-Open the new `my-app` folder in VS Code and open Copilot Chat in agent mode.
+Open this folder in VS Code and open Copilot Chat in agent mode.
 
 ## The steps
 
