@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 #
 # setup.sh - install the Spec Kit CLI (specify) for the spec driven workshop on macOS, Linux or
-# Git Bash.
+# Git Bash. Runs unattended.
 #
-#   1. uv: checks that it works, offers the official installer when it is missing
-#   2. the Spec Kit CLI from GitHub at the pinned tag: uv tool install specify-cli --from git+...@v<version>
-#   3. prints the next step: specify init my-app --integration copilot
+#   1. uv: checks that it works, installs it with the official installer when it is missing
+#   2. the Spec Kit CLI from GitHub at the pinned tag: uv tool install specify-cli --from <tag archive>
+#   3. puts specify on the PATH of new terminals and prints the next step: specify init my-app --integration copilot
 #
-# Safe to run again: an installed CLI at the pinned version is left alone, another version is
-# replaced by the pinned one. On Git Bash it hands off to setup.ps1, so Windows has one installer.
+# Safe to run again: a working CLI at the pinned version is left alone; anything else, another
+# version or a broken install, is replaced by the pinned one. On Git Bash it hands off to setup.ps1,
+# so Windows has one installer.
 #
 # Usage: ./setup.sh
 
@@ -27,7 +28,9 @@ cd "$SCRIPT_DIRECTORY"
 # Every participant and trainer uses this one version: the one session 2's setup installs its Spec Kit skills
 # with. setup.ps1, setup.cmd and README.md repeat it.
 SPEC_KIT_VERSION="1.1.3"
-SPEC_KIT_SOURCE="git+https://github.com/github/spec-kit.git@v$SPEC_KIT_VERSION"
+# The tag archive instead of git+https: uv downloads it itself, so neither git nor git's proxy and
+# certificate settings are needed.
+SPEC_KIT_SOURCE="https://github.com/github/spec-kit/archive/refs/tags/v$SPEC_KIT_VERSION.zip"
 
 USAGE="Usage: ./setup.sh"
 for argument in "$@"; do
@@ -44,13 +47,6 @@ info() { printf '\033[36m•\033[0m %s\n' "$1"; }
 ok()   { printf '\033[32m✓\033[0m %s\n' "$1"; }
 warn() { printf '\033[33m!\033[0m %s\n' "$1"; }
 error_message() { printf '\033[31m✗\033[0m %s\n' "$1" >&2; }
-
-# offer "question" -> 0 when the answer is yes. No terminal to answer from counts as no.
-offer() {
-  local answer=""
-  read -r -p "  $1 [y/N] " answer || true
-  [[ "$answer" == "y" || "$answer" == "Y" ]]
-}
 
 # True when directory $1 is one of the entries of $2, a PATH-style list.
 path_list_contains() {
@@ -89,12 +85,35 @@ print_uv_install_help() {
 print_manual_install_help() {
   echo
   info "Install the Spec Kit CLI yourself with:"
-  echo "    uv tool install specify-cli --from $SPEC_KIT_SOURCE --force"
+  echo "    uv tool install --force specify-cli --from $SPEC_KIT_SOURCE"
+  info "Behind a proxy, set HTTPS_PROXY first, for example:  export HTTPS_PROXY=http://proxy.example:8080"
+}
+
+# Downloads the official uv installer and runs it, with curl or else wget.
+run_uv_installer() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- https://astral.sh/uv/install.sh | sh
+  else
+    error_message "Neither curl nor wget was found, so uv cannot be downloaded."
+    return 1
+  fi
+}
+
+# True when the specify on PATH runs and reports the pinned version; its output lands in SPECIFY_VERSION_OUTPUT.
+specify_works_at_pinned_version() {
+  SPECIFY_VERSION_OUTPUT="$(specify --version 2>/dev/null)" || return 1
+  case "$SPECIFY_VERSION_OUTPUT" in
+    *"$SPEC_KIT_VERSION"*) return 0 ;;
+    *)                     return 1 ;;
+  esac
 }
 
 # The PATH this terminal started with, to tell whether a new terminal finds the tools too.
 ORIGINAL_PATH="$PATH"
 UV_WAS_INSTALLED=0
+SPECIFY_VERSION_OUTPUT=""
 
 # --- 1. uv -------------------------------------------------------------------
 step "1/3 uv"
@@ -104,27 +123,16 @@ UV_INSTALL_DIRECTORY="${UV_INSTALL_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}"
 if [ -d "$UV_INSTALL_DIRECTORY" ]; then export PATH="$UV_INSTALL_DIRECTORY:$PATH"; fi
 
 if ! command -v uv >/dev/null 2>&1; then
-  error_message "uv was not found."
-  if offer "Install uv now with the official installer (curl -LsSf https://astral.sh/uv/install.sh | sh)?"; then
-    if ! command -v curl >/dev/null 2>&1; then
-      error_message "curl is needed to download uv and was not found."
-      print_uv_install_help
-      exit 1
-    fi
-    if ! curl -LsSf https://astral.sh/uv/install.sh | sh; then
-      error_message "The uv installer did not finish."
-      print_uv_install_help
-      exit 1
-    fi
-    export PATH="$UV_INSTALL_DIRECTORY:$PATH"
-    UV_WAS_INSTALLED=1
-    if ! command -v uv >/dev/null 2>&1; then
-      error_message "uv was installed but this terminal cannot find it. Open a new terminal and run ./setup.sh again."
-      exit 1
-    fi
-  else
-    error_message "uv is required."
+  info "uv was not found. Installing it with the official installer (https://astral.sh/uv/install.sh)..."
+  if ! run_uv_installer; then
+    error_message "The uv installer did not finish."
     print_uv_install_help
+    exit 1
+  fi
+  export PATH="$UV_INSTALL_DIRECTORY:$PATH"
+  UV_WAS_INSTALLED=1
+  if ! command -v uv >/dev/null 2>&1; then
+    error_message "uv was installed but this terminal cannot find it. Open a new terminal and run ./setup.sh again."
     exit 1
   fi
 fi
@@ -135,28 +143,38 @@ if ! UV_VERSION="$(uv --version 2>/dev/null)"; then
   print_uv_install_help
   exit 1
 fi
+if ! uv tool --help >/dev/null 2>&1; then
+  error_message "$UV_VERSION is too old for uv tool. Update it with:  uv self update"
+  exit 1
+fi
 ok "$UV_VERSION works ($(command -v uv))."
+
+# A TLS-inspecting proxy re-signs traffic with a company certificate that only the system store
+# trusts; uv's own certificate bundle would reject it.
+if [ -z "${UV_SYSTEM_CERTS:-}${UV_NATIVE_TLS:-}" ]; then
+  if uv tool install --help 2>/dev/null | grep -q -- '--system-certs'; then
+    export UV_SYSTEM_CERTS=1
+  else
+    export UV_NATIVE_TLS=1
+  fi
+fi
 
 # --- 2. The Spec Kit CLI -------------------------------------------------------
 step "2/3 The Spec Kit CLI (specify-cli $SPEC_KIT_VERSION)"
+TOOL_BIN_DIRECTORY="$(uv tool dir --bin 2>/dev/null || true)"
+if [ -n "$TOOL_BIN_DIRECTORY" ]; then export PATH="$TOOL_BIN_DIRECTORY:$PATH"; fi
 INSTALLED_SPEC_KIT_VERSION="$(uv tool list 2>/dev/null | sed -n 's/^specify-cli v\([^ ]*\).*/\1/p' | head -n 1 || true)"
-OTHER_SPECIFY_COMMAND="$(command -v specify 2>/dev/null || true)"
 
-if [ "$INSTALLED_SPEC_KIT_VERSION" = "$SPEC_KIT_VERSION" ]; then
+if [ "$INSTALLED_SPEC_KIT_VERSION" = "$SPEC_KIT_VERSION" ] && specify_works_at_pinned_version; then
   ok "specify-cli $SPEC_KIT_VERSION is already installed."
 else
-  # --force replaces another version, including one installed from PyPI, and a specify command
-  # another installer left in uv's bin directory.
-  INSTALL_ARGUMENTS=(tool install specify-cli --from "$SPEC_KIT_SOURCE")
-  if [ -n "$INSTALLED_SPEC_KIT_VERSION" ]; then
+  if [ -n "$INSTALLED_SPEC_KIT_VERSION" ] && [ "$INSTALLED_SPEC_KIT_VERSION" != "$SPEC_KIT_VERSION" ]; then
     warn "specify-cli $INSTALLED_SPEC_KIT_VERSION is installed. Replacing it with $SPEC_KIT_VERSION, the version the workshop uses."
-    INSTALL_ARGUMENTS+=(--force)
-  elif [ -n "$OTHER_SPECIFY_COMMAND" ]; then
-    warn "Another specify command is on your PATH ($OTHER_SPECIFY_COMMAND). Installing $SPEC_KIT_VERSION with uv."
-    INSTALL_ARGUMENTS+=(--force)
   fi
-  info "Running uv ${INSTALL_ARGUMENTS[*]}..."
-  if ! uv "${INSTALL_ARGUMENTS[@]}"; then
+  # --force replaces another version, a broken tool environment, and a specify command another
+  # installer left in uv's bin directory.
+  info "Installing specify-cli $SPEC_KIT_VERSION from GitHub. The first time this can take a few minutes..."
+  if ! uv tool install --force specify-cli --from "$SPEC_KIT_SOURCE"; then
     error_message "Installing the Spec Kit CLI failed. Check your internet connection (or HTTPS_PROXY behind a proxy)."
     print_manual_install_help
     exit 1
@@ -164,25 +182,20 @@ else
   ok "specify-cli $SPEC_KIT_VERSION installed."
 fi
 
-TOOL_BIN_DIRECTORY="$(uv tool dir --bin 2>/dev/null || true)"
-if [ -n "$TOOL_BIN_DIRECTORY" ]; then export PATH="$TOOL_BIN_DIRECTORY:$PATH"; fi
-
-if ! SPECIFY_VERSION_OUTPUT="$(specify --version 2>/dev/null)"; then
-  error_message "specify does not run after the install (uv tool bin directory: ${TOOL_BIN_DIRECTORY:-unknown})."
+if ! specify_works_at_pinned_version; then
+  if [ -n "$SPECIFY_VERSION_OUTPUT" ]; then
+    error_message "specify reports '$SPECIFY_VERSION_OUTPUT' instead of $SPEC_KIT_VERSION ($(command -v specify))."
+  else
+    error_message "specify does not run after the install (uv tool bin directory: ${TOOL_BIN_DIRECTORY:-unknown})."
+  fi
   print_manual_install_help
   exit 1
 fi
 SPECIFY_COMMAND="$(command -v specify)"
-case "$SPECIFY_VERSION_OUTPUT" in
-  *"$SPEC_KIT_VERSION"*) ok "$SPECIFY_VERSION_OUTPUT works ($SPECIFY_COMMAND)." ;;
-  *)
-    error_message "specify reports '$SPECIFY_VERSION_OUTPUT' instead of $SPEC_KIT_VERSION ($SPECIFY_COMMAND)."
-    print_manual_install_help
-    exit 1 ;;
-esac
+ok "$SPECIFY_VERSION_OUTPUT works ($SPECIFY_COMMAND)."
 
 # How the participant reaches specify after this script ends: plainly, in a new terminal, or by its
-# full path when its folder stays off PATH.
+# full path when another specify comes first on PATH.
 SPECIFY_INVOCATION="specify"
 NEEDS_NEW_TERMINAL=0
 SPECIFY_DIRECTORY="$(dirname "$SPECIFY_COMMAND")"
@@ -190,13 +203,14 @@ if [ "$UV_WAS_INSTALLED" = "1" ] && [ "$SPECIFY_DIRECTORY" = "$UV_INSTALL_DIRECT
   # The uv installer already added this folder to the shell's startup file.
   NEEDS_NEW_TERMINAL=1
 elif ! path_list_contains "$SPECIFY_DIRECTORY" "$ORIGINAL_PATH"; then
-  warn "$SPECIFY_DIRECTORY is not on your PATH yet, so your terminal does not find specify."
-  if offer "Add it to your shell's startup file now (uv tool update-shell)?" && uv tool update-shell; then
+  info "$SPECIFY_DIRECTORY is not on your PATH yet. Adding it to your shell's startup file (uv tool update-shell)..."
+  # With the PATH this terminal started with: uv skips a folder it already finds on the current PATH.
+  if PATH="$ORIGINAL_PATH" "$(command -v uv)" tool update-shell; then
     ok "Added. It takes effect in new terminals."
     NEEDS_NEW_TERMINAL=1
   else
+    warn "Could not add it. Add it later with:  uv tool update-shell"
     SPECIFY_INVOCATION="\"$SPECIFY_COMMAND\""
-    info "Add it later with:  uv tool update-shell"
   fi
 else
   SPECIFY_IN_YOUR_TERMINAL="$( (PATH="$ORIGINAL_PATH"; command -v specify) 2>/dev/null || true)"
@@ -210,9 +224,13 @@ fi
 step "3/3 Next step"
 ok "Spec Kit is ready."
 if [ "$NEEDS_NEW_TERMINAL" = "1" ]; then
-  info "Open a new terminal, go to the folder where your project should live and run:"
+  info "Open a new terminal (in VS Code: quit VS Code and start it again), go to the folder where your project should live and run:"
 else
   info "Go to the folder where your project should live and run:"
 fi
 echo "    $SPECIFY_INVOCATION init my-app --integration copilot"
+if [ "$SPECIFY_INVOCATION" = "specify" ] && [ "$NEEDS_NEW_TERMINAL" = "1" ]; then
+  info "Or, in a terminal that does not find specify yet:"
+  echo "    \"$SPECIFY_COMMAND\" init my-app --integration copilot"
+fi
 info "Then open the new my-app folder in VS Code and open Copilot Chat in agent mode."
