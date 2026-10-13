@@ -1,12 +1,13 @@
 <#
 .SYNOPSIS
-  setup.ps1 - turn every project folder of the session 1 repository into its own git repository,
-  on Windows.
+  setup.ps1 - turn every project folder of the session 1 repository into its own git repository
+  and install what the rounds need, on Windows.
 
 .DESCRIPTION
   1. Checks that git works and that this folder is not inside another git repository
   2. Removes the .git of this folder, after asking: the clone's history goes, every file stays
   3. git init and a first commit in 1-vibecoding\, 2-vibecoding\ and 3-vibecoding\
+  4. The Spec Kit CLI for round 3, through 3-vibecoding\setup.ps1
 
   One repository per project keeps the agent away from your other rounds: Copilot CLI and worktree sessions
   work from the git root. Safe to run again: a project that is already a repository is left alone.
@@ -24,6 +25,7 @@ param()
 # $LASTEXITCODE instead.
 
 $script:ProjectFolders = @('1-vibecoding', '2-vibecoding', '3-vibecoding')
+$script:SpecKitSetupScript = '3-vibecoding\setup.ps1'
 $script:FirstCommitMessage = 'Starter'
 $script:FallbackAuthorName = 'Duinzicht workshop'
 $script:FallbackAuthorEmail = 'workshop@duinzicht.example'
@@ -67,10 +69,10 @@ function Get-GitValue($key) {
 }
 
 function Invoke-Setup {
-    Write-Bold 'Splitting the session 1 repository into one repository per project'
+    Write-Bold 'Setting up the session 1 repository: one repository per project, and Spec Kit for round 3'
 
     # --- 1. Checks -----------------------------------------------------------
-    Write-Step '1/3 Checks'
+    Write-Step '1/4 Checks'
     if (-not (Get-Command 'git' -ErrorAction SilentlyContinue)) {
         Write-ErrorMessage 'git was not found. Install it from https://git-scm.com and run setup again.'
         $script:SetupExitCode = 1; return
@@ -95,7 +97,7 @@ function Invoke-Setup {
     Write-Ok 'This folder is not inside another git repository.'
 
     # --- 2. Remove the repository of this folder -------------------------------
-    Write-Step '2/3 Remove the repository of this folder'
+    Write-Step '2/4 Remove the repository of this folder'
     $repositoryPath = Join-Path (Get-Location).Path '.git'
     if (Test-Path -Path $repositoryPath) {
         Write-Info 'Every project gets its own repository, so the agent stays inside its project folder.'
@@ -116,7 +118,7 @@ function Invoke-Setup {
     }
 
     # --- 3. One repository per project -----------------------------------------
-    Write-Step '3/3 One repository per project'
+    Write-Step '3/4 One repository per project'
     $commitIdentity = @()
     if (-not (Get-GitValue 'user.name') -or -not (Get-GitValue 'user.email')) {
         Write-Info "git has no name and email set up, so the first commits use `"$script:FallbackAuthorName`"."
@@ -139,6 +141,15 @@ function Invoke-Setup {
             $script:SetupExitCode = 1; return
         }
         Write-Ok "$projectFolder is its own repository, with a first commit on main."
+    }
+
+    # --- 4. Spec Kit for round 3 ----------------------------------------------
+    Write-Step '4/4 Spec Kit for round 3'
+    $global:LASTEXITCODE = 1
+    & (Join-Path (Get-Location).Path $script:SpecKitSetupScript)
+    if ($LASTEXITCODE -ne 0) {
+        Write-ErrorMessage 'Installing Spec Kit did not finish. Rounds 1 and 2 are ready; double-click setup.cmd in 3-vibecoding before round 3.'
+        $script:SetupExitCode = 1; return
     }
 
     Write-Host ''

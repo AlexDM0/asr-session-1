@@ -14,7 +14,7 @@ if "%SETUP_EXIT_CODE%"=="0" (
 ) else (
   echo Setup did not finish. Read the messages above.
   echo If PowerShell refused to run setup.ps1, install uv from https://docs.astral.sh/uv/ and run:
-  echo     uv tool install specify-cli==1.1.1 --force
+  echo     uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@v1.1.3 --force
   echo Press any key to close this window.
 )
 pause >nul

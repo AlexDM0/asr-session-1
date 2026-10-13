@@ -2,6 +2,7 @@
 
 One folder per workshop round. Run the setup in this folder first: it removes this folder's `.git`
 and makes each round's folder its own git repository, so the agent does not see your earlier rounds.
+It also installs uv and the Spec Kit CLI that round 3 needs.
 
 | On | Do |
 |---|---|

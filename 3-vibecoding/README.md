@@ -14,7 +14,7 @@ Spec Kit needs uv, the Python package manager. The setup script in this folder c
 If you already have uv, you can install it yourself instead:
 
 ```bash
-uv tool install specify-cli==1.1.1 --force
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@v1.1.3 --force
 ```
 
 Then make your project in the folder where it should live:

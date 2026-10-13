@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   1. uv: checks that it works, offers the official installer when it is missing
-  2. the Spec Kit CLI from PyPI at the pinned version: uv tool install specify-cli==<version>
+  2. the Spec Kit CLI from GitHub at the pinned tag: uv tool install specify-cli --from git+...@v<version>
   3. prints the next step: specify init my-app --integration copilot
 
   Safe to run again: an installed CLI at the pinned version is left alone, another version is
@@ -22,9 +22,10 @@ param()
 # command writes to stderr into a terminating error under Stop. Every native call checks
 # $LASTEXITCODE instead.
 
-# Every participant and trainer uses this one version: the one the session 2 starter's Spec Kit files
-# were generated with. setup.sh, setup.cmd and README.md repeat it.
-$script:SpecKitVersion = '1.1.1'
+# Every participant and trainer uses this one version: the one session 2's setup installs its Spec Kit skills
+# with. setup.sh, setup.cmd and README.md repeat it.
+$script:SpecKitVersion = '1.1.3'
+$script:SpecKitSource = "git+https://github.com/github/spec-kit.git@v$script:SpecKitVersion"
 # The PATH this window started with, before this script added anything to it.
 $script:StartingPath = $env:PATH
 
@@ -66,7 +67,7 @@ function Show-UvInstallHelp {
 function Show-ManualInstallHelp {
     Write-Host ''
     Write-Info 'Install the Spec Kit CLI yourself with:'
-    Write-Host "    uv tool install specify-cli==$script:SpecKitVersion --force"
+    Write-Host "    uv tool install specify-cli --from $script:SpecKitSource --force"
 }
 
 # Where the official installer puts uv.
@@ -186,9 +187,9 @@ function Invoke-Setup {
     if ($installedSpecKitVersion -eq $script:SpecKitVersion) {
         Write-Ok "specify-cli $script:SpecKitVersion is already installed."
     } else {
-        # --force replaces another version, including one installed from git, and a specify command
+        # --force replaces another version, including one installed from PyPI, and a specify command
         # another installer left in uv's bin directory.
-        $installArguments = @('tool', 'install', "specify-cli==$script:SpecKitVersion")
+        $installArguments = @('tool', 'install', 'specify-cli', '--from', $script:SpecKitSource)
         if ($installedSpecKitVersion) {
             Write-Warn "specify-cli $installedSpecKitVersion is installed. Replacing it with $script:SpecKitVersion, the version the workshop uses."
             $installArguments += '--force'

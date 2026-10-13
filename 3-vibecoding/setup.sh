@@ -4,7 +4,7 @@
 # Git Bash.
 #
 #   1. uv: checks that it works, offers the official installer when it is missing
-#   2. the Spec Kit CLI from PyPI at the pinned version: uv tool install specify-cli==<version>
+#   2. the Spec Kit CLI from GitHub at the pinned tag: uv tool install specify-cli --from git+...@v<version>
 #   3. prints the next step: specify init my-app --integration copilot
 #
 # Safe to run again: an installed CLI at the pinned version is left alone, another version is
@@ -24,9 +24,10 @@ set -euo pipefail
 SCRIPT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 cd "$SCRIPT_DIRECTORY"
 
-# Every participant and trainer uses this one version: the one the session 2 starter's Spec Kit files
-# were generated with. setup.ps1, setup.cmd and README.md repeat it.
-SPEC_KIT_VERSION="1.1.1"
+# Every participant and trainer uses this one version: the one session 2's setup installs its Spec Kit skills
+# with. setup.ps1, setup.cmd and README.md repeat it.
+SPEC_KIT_VERSION="1.1.3"
+SPEC_KIT_SOURCE="git+https://github.com/github/spec-kit.git@v$SPEC_KIT_VERSION"
 
 USAGE="Usage: ./setup.sh"
 for argument in "$@"; do
@@ -88,7 +89,7 @@ print_uv_install_help() {
 print_manual_install_help() {
   echo
   info "Install the Spec Kit CLI yourself with:"
-  echo "    uv tool install specify-cli==$SPEC_KIT_VERSION --force"
+  echo "    uv tool install specify-cli --from $SPEC_KIT_SOURCE --force"
 }
 
 # The PATH this terminal started with, to tell whether a new terminal finds the tools too.
@@ -144,9 +145,9 @@ OTHER_SPECIFY_COMMAND="$(command -v specify 2>/dev/null || true)"
 if [ "$INSTALLED_SPEC_KIT_VERSION" = "$SPEC_KIT_VERSION" ]; then
   ok "specify-cli $SPEC_KIT_VERSION is already installed."
 else
-  # --force replaces another version, including one installed from git, and a specify command
+  # --force replaces another version, including one installed from PyPI, and a specify command
   # another installer left in uv's bin directory.
-  INSTALL_ARGUMENTS=(tool install "specify-cli==$SPEC_KIT_VERSION")
+  INSTALL_ARGUMENTS=(tool install specify-cli --from "$SPEC_KIT_SOURCE")
   if [ -n "$INSTALLED_SPEC_KIT_VERSION" ]; then
     warn "specify-cli $INSTALLED_SPEC_KIT_VERSION is installed. Replacing it with $SPEC_KIT_VERSION, the version the workshop uses."
     INSTALL_ARGUMENTS+=(--force)
