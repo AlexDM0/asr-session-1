@@ -4,12 +4,14 @@
 # Git Bash. Runs unattended.
 #
 #   1. uv: checks that it works, installs it with the official installer when it is missing
-#   2. the Spec Kit CLI from GitHub at the pinned tag: uv tool install specify-cli --from <tag archive>
-#   3. puts specify on the PATH of new terminals and sets up Spec Kit in this folder:
+#   2. Python 3.13 through uv, as the python and python3 of new terminals
+#   3. the Spec Kit CLI from GitHub at the pinned tag, on Python 3.13:
+#      uv tool install specify-cli --python 3.13 --from <tag archive>
+#   4. puts specify on the PATH of new terminals and sets up Spec Kit in this folder:
 #      specify init . --integration copilot --script py
 #
-# Safe to run again: a working CLI at the pinned version is left alone; anything else, another
-# version or a broken install, is replaced by the pinned one. A folder that already has .specify is
+# Safe to run again: a working CLI at the pinned version on Python 3.13 is left alone; anything
+# else, another version, another Python or a broken install, is replaced by the pinned one. A folder that already has .specify is
 # left alone too. On Git Bash it hands off to setup.ps1,
 # so Windows has one installer.
 #
@@ -33,6 +35,10 @@ SPEC_KIT_VERSION="1.1.3"
 # The tag archive instead of git+https: uv downloads it itself, so neither git nor git's proxy and
 # certificate settings are needed.
 SPEC_KIT_SOURCE="https://github.com/github/spec-kit/archive/refs/tags/v$SPEC_KIT_VERSION.zip"
+# specify-cli runs on this Python, not on whatever uv finds first: its dependencies, PyYAML among
+# them, have wheels for it, so nothing has to be built from source. Spec Kit's --script py scripts
+# run on it too. Session 2's setup pins the same version.
+PYTHON_VERSION="3.13"
 
 USAGE="Usage: ./setup.sh"
 for argument in "$@"; do
@@ -87,8 +93,20 @@ print_uv_install_help() {
 print_manual_install_help() {
   echo
   info "Install the Spec Kit CLI yourself with:"
-  echo "    uv tool install --force specify-cli --from $SPEC_KIT_SOURCE"
+  echo "    uv python install $PYTHON_VERSION --default"
+  echo "    uv tool install --force specify-cli --python $PYTHON_VERSION --from $SPEC_KIT_SOURCE"
   info "Behind a proxy, set HTTPS_PROXY first, for example:  export HTTPS_PROXY=http://proxy.example:8080"
+}
+
+# True when the specify-cli tool environment runs on the pinned Python.
+specify_uses_pinned_python() {
+  local tool_directory tool_python_version
+  tool_directory="$(uv tool dir 2>/dev/null)" || return 1
+  tool_python_version="$("$tool_directory/specify-cli/bin/python" --version 2>/dev/null)" || return 1
+  case "$tool_python_version" in
+    "Python $PYTHON_VERSION".*) return 0 ;;
+    *)                          return 1 ;;
+  esac
 }
 
 # Downloads the official uv installer and runs it, with curl or else wget.
@@ -118,7 +136,7 @@ UV_WAS_INSTALLED=0
 SPECIFY_VERSION_OUTPUT=""
 
 # --- 1. uv -------------------------------------------------------------------
-step "1/3 uv"
+step "1/4 uv"
 # Where the official installer puts uv. A uv installed in another terminal is only on this
 # terminal's PATH after a restart.
 UV_INSTALL_DIRECTORY="${UV_INSTALL_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}"
@@ -161,27 +179,42 @@ if [ -z "${UV_SYSTEM_CERTS:-}${UV_NATIVE_TLS:-}" ]; then
   fi
 fi
 
-# --- 2. The Spec Kit CLI -------------------------------------------------------
-step "2/3 The Spec Kit CLI (specify-cli $SPEC_KIT_VERSION)"
+# --- 2. Python -----------------------------------------------------------------
+# python lands in the same folder as specify, unless UV_PYTHON_BIN_DIR says otherwise, so step 3
+# puts both on the PATH of new terminals.
+step "2/4 Python $PYTHON_VERSION"
+# Older uv releases only know --default as a preview feature.
+info "Installing Python $PYTHON_VERSION as the default python. The first time this can take a few minutes..."
+if ! uv python install "$PYTHON_VERSION" --default && ! uv python install "$PYTHON_VERSION" --default --preview; then
+  error_message "Installing Python $PYTHON_VERSION failed. Check your internet connection (or HTTPS_PROXY behind a proxy)."
+  print_manual_install_help
+  exit 1
+fi
+ok "Python $PYTHON_VERSION is installed."
+
+# --- 3. The Spec Kit CLI -------------------------------------------------------
+step "3/4 The Spec Kit CLI (specify-cli $SPEC_KIT_VERSION)"
 TOOL_BIN_DIRECTORY="$(uv tool dir --bin 2>/dev/null || true)"
 if [ -n "$TOOL_BIN_DIRECTORY" ]; then export PATH="$TOOL_BIN_DIRECTORY:$PATH"; fi
 INSTALLED_SPEC_KIT_VERSION="$(uv tool list 2>/dev/null | sed -n 's/^specify-cli v\([^ ]*\).*/\1/p' | head -n 1 || true)"
 
-if [ "$INSTALLED_SPEC_KIT_VERSION" = "$SPEC_KIT_VERSION" ] && specify_works_at_pinned_version; then
-  ok "specify-cli $SPEC_KIT_VERSION is already installed."
+if [ "$INSTALLED_SPEC_KIT_VERSION" = "$SPEC_KIT_VERSION" ] && specify_uses_pinned_python && specify_works_at_pinned_version; then
+  ok "specify-cli $SPEC_KIT_VERSION is already installed on Python $PYTHON_VERSION."
 else
   if [ -n "$INSTALLED_SPEC_KIT_VERSION" ] && [ "$INSTALLED_SPEC_KIT_VERSION" != "$SPEC_KIT_VERSION" ]; then
     warn "specify-cli $INSTALLED_SPEC_KIT_VERSION is installed. Replacing it with $SPEC_KIT_VERSION, the version the workshop uses."
+  elif [ -n "$INSTALLED_SPEC_KIT_VERSION" ] && ! specify_uses_pinned_python; then
+    warn "specify-cli runs on another Python. Installing it again on Python $PYTHON_VERSION."
   fi
   # --force replaces another version, a broken tool environment, and a specify command another
   # installer left in uv's bin directory.
-  info "Installing specify-cli $SPEC_KIT_VERSION from GitHub. The first time this can take a few minutes..."
-  if ! uv tool install --force specify-cli --from "$SPEC_KIT_SOURCE"; then
+  info "Installing specify-cli $SPEC_KIT_VERSION from GitHub on Python $PYTHON_VERSION. The first time this can take a few minutes..."
+  if ! uv tool install --force specify-cli --python "$PYTHON_VERSION" --from "$SPEC_KIT_SOURCE"; then
     error_message "Installing the Spec Kit CLI failed. Check your internet connection (or HTTPS_PROXY behind a proxy)."
     print_manual_install_help
     exit 1
   fi
-  ok "specify-cli $SPEC_KIT_VERSION installed."
+  ok "specify-cli $SPEC_KIT_VERSION installed on Python $PYTHON_VERSION."
 fi
 
 if ! specify_works_at_pinned_version; then
@@ -222,8 +255,8 @@ else
   fi
 fi
 
-# --- 3. Spec Kit in this folder ----------------------------------------------------
-step "3/3 Spec Kit in this folder"
+# --- 4. Spec Kit in this folder ----------------------------------------------------
+step "4/4 Spec Kit in this folder"
 # A second run leaves .specify alone: init --force would overwrite a constitution the participant already wrote.
 if [ -d ".specify" ]; then
   ok "This folder already has .specify, so specify init is skipped."

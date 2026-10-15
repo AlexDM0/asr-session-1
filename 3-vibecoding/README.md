@@ -6,7 +6,7 @@ Keep [cheatsheet.md](./cheatsheet.md) open next to the chat: the install, the co
 
 ## Install Spec Kit
 
-Spec Kit needs uv, the Python package manager. The setup script in this folder checks uv, installs it when it is missing, and installs the Spec Kit CLI at the version the workshop uses:
+Spec Kit needs uv, the Python package manager. The setup script in this folder checks uv, installs it when it is missing, installs Python 3.13 as your default `python`, and installs the Spec Kit CLI on it at the version the workshop uses:
 
 - **Windows:** double-click `setup.cmd`.
 - **macOS, Linux or Git Bash:** run `./setup.sh`.
@@ -14,7 +14,8 @@ Spec Kit needs uv, the Python package manager. The setup script in this folder c
 If you already have uv, you can install it yourself instead:
 
 ```bash
-uv tool install --force specify-cli --from https://github.com/github/spec-kit/archive/refs/tags/v1.1.3.zip
+uv python install 3.13 --default
+uv tool install --force specify-cli --python 3.13 --from https://github.com/github/spec-kit/archive/refs/tags/v1.1.3.zip
 ```
 
 The setup script then sets up Spec Kit in this folder. If you installed the CLI yourself, run this in this folder:

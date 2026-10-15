@@ -5,13 +5,15 @@
 
 .DESCRIPTION
   1. uv: checks that it works, installs a pinned uv release from GitHub when it is missing
-  2. the Spec Kit CLI from GitHub at the pinned tag: uv tool install specify-cli --from <tag archive>
-  3. puts specify on the PATH of new windows and sets up Spec Kit in this folder:
+  2. Python 3.13 through uv, as the python and python3 of new windows
+  3. the Spec Kit CLI from GitHub at the pinned tag, on Python 3.13:
+     uv tool install specify-cli --python 3.13 --from <tag archive>
+  4. puts specify on the PATH of new windows and sets up Spec Kit in this folder:
      specify init . --integration copilot --script py
 
-  Safe to run again: a working CLI at the pinned version is left alone; anything else, another
-  version or a broken install, is replaced by the pinned one. A folder that already has .specify
-  is left alone too. Works in Windows PowerShell 5.1 and
+  Safe to run again: a working CLI at the pinned version on Python 3.13 is left alone; anything
+  else, another version, another Python or a broken install, is replaced by the pinned one. A
+  folder that already has .specify is left alone too. Works in Windows PowerShell 5.1 and
   PowerShell 7. Deliberately pure ASCII, so 5.1 parses it without a BOM. setup.cmd next to this
   file starts it with the execution policy bypassed; setup.sh hands off to it on Git Bash.
 
@@ -31,6 +33,10 @@ $script:SpecKitVersion = '1.1.3'
 # The tag archive instead of git+https: uv downloads it itself, so neither git nor git's proxy and
 # certificate settings are needed.
 $script:SpecKitSource = "https://github.com/github/spec-kit/archive/refs/tags/v$script:SpecKitVersion.zip"
+# specify-cli runs on this Python, not on whatever uv finds first: its dependencies, PyYAML among
+# them, have wheels for it, so nothing has to be built from source. Spec Kit's --script py scripts
+# run on it too. Session 2's setup pins the same version.
+$script:PythonVersion = '3.13'
 # A pinned uv release, checked against its published SHA-256, instead of piping an installer script
 # into iex: deterministic, and not the download pattern endpoint security software blocks.
 $script:UvVersion = '0.11.29'
@@ -68,7 +74,8 @@ function Show-UvInstallHelp {
 function Show-ManualInstallHelp {
     Write-Host ''
     Write-Info 'Install the Spec Kit CLI yourself with:'
-    Write-Host "    uv tool install --force specify-cli --from $script:SpecKitSource"
+    Write-Host "    uv python install $script:PythonVersion --default"
+    Write-Host "    uv tool install --force specify-cli --python $script:PythonVersion --from $script:SpecKitSource"
     Write-Info 'Behind a proxy, set it first, for example:  $env:HTTPS_PROXY = "http://proxy.example:8080"'
 }
 
@@ -91,6 +98,29 @@ function Get-ToolBinDirectory {
     if ($env:UV_TOOL_BIN_DIR) { return $env:UV_TOOL_BIN_DIR }
     if ($env:XDG_BIN_HOME) { return $env:XDG_BIN_HOME }
     return (Join-Path (Join-Path $env:USERPROFILE '.local') 'bin')
+}
+
+# Where uv python install --default puts python.exe and python3.exe.
+function Get-PythonBinDirectory {
+    if ($env:UV_PYTHON_BIN_DIR) { return $env:UV_PYTHON_BIN_DIR }
+    if ($env:XDG_BIN_HOME) { return $env:XDG_BIN_HOME }
+    return (Join-Path (Join-Path $env:USERPROFILE '.local') 'bin')
+}
+
+# The python.exe of the specify-cli tool environment. Derived instead of asking uv, for the same
+# reason as Get-ToolBinDirectory.
+function Get-SpecifyToolPython {
+    $toolDirectory = if ($env:UV_TOOL_DIR) { $env:UV_TOOL_DIR } else { Join-Path (Join-Path $env:APPDATA 'uv') 'tools' }
+    return (Join-Path (Join-Path (Join-Path $toolDirectory 'specify-cli') 'Scripts') 'python.exe')
+}
+
+# Whether the specify-cli tool environment runs on the pinned Python.
+function Test-SpecifyUsesPinnedPython {
+    $toolPython = Get-SpecifyToolPython
+    if (-not (Test-Path -LiteralPath $toolPython)) { return $false }
+    $pythonVersionLines = Invoke-NativeForOutput $toolPython @('--version')
+    if (-not $pythonVersionLines) { return $false }
+    return (([string]$pythonVersionLines[0]).Trim() -like "Python $script:PythonVersion.*")
 }
 
 # The PATH a new window starts with, read from the registry with cmdlets that also work when
@@ -235,7 +265,7 @@ function Invoke-Setup {
     Initialize-SystemProxy
 
     # --- 1. uv ---------------------------------------------------------------
-    Write-Step '1/3 uv'
+    Write-Step '1/4 uv'
     $uvInstallDirectory = Get-UvInstallDirectory
     # A uv installed in another window is only on this window's PATH after a reopen.
     if (Test-Path -LiteralPath $uvInstallDirectory) { $env:PATH = $uvInstallDirectory + ';' + $env:PATH }
@@ -282,8 +312,37 @@ function Invoke-Setup {
         if (($uvToolHelp -join "`n") -match '--system-certs') { $env:UV_SYSTEM_CERTS = '1' } else { $env:UV_NATIVE_TLS = '1' }
     }
 
-    # --- 2. The Spec Kit CLI -------------------------------------------------
-    Write-Step "2/3 The Spec Kit CLI (specify-cli $script:SpecKitVersion)"
+    # --- 2. Python -------------------------------------------------------------
+    Write-Step "2/4 Python $script:PythonVersion"
+    # Older uv releases only know --default as a preview feature.
+    Write-Info "Installing Python $script:PythonVersion as the default python. The first time this can take a few minutes..."
+    $global:LASTEXITCODE = 1
+    & uv python install $script:PythonVersion --default | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        $global:LASTEXITCODE = 1
+        & uv python install $script:PythonVersion --default --preview | Out-Host
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-ErrorMessage "Installing Python $script:PythonVersion failed. Check your internet connection (or HTTPS_PROXY behind a proxy)."
+        Show-ManualInstallHelp
+        $script:SetupExitCode = 1; return
+    }
+    $pythonBinDirectory = Get-PythonBinDirectory
+    $newWindowPath = Get-PersistedPath
+    if (-not $newWindowPath) { $newWindowPath = $script:StartingPath }
+    if (-not (Test-PathListContains $pythonBinDirectory $newWindowPath)) {
+        Write-Info "$pythonBinDirectory is not on your PATH yet. Adding it to your user PATH..."
+        $pathUpdated = $false
+        if ($script:IsFullLanguage) {
+            try { Add-UserPathEntry $pythonBinDirectory; $pathUpdated = $true } catch { }
+        }
+        if ($pathUpdated) { Write-Ok 'Added. It takes effect in new windows.' } else { Write-Warn 'Could not add it. Add it later with:  uv tool update-shell' }
+    }
+    if (-not (Test-PathListContains $pythonBinDirectory $script:StartingPath)) { $needsNewWindow = $true }
+    Write-Ok "Python $script:PythonVersion is installed."
+
+    # --- 3. The Spec Kit CLI -------------------------------------------------
+    Write-Step "3/4 The Spec Kit CLI (specify-cli $script:SpecKitVersion)"
     $toolBinDirectory = Get-ToolBinDirectory
     $env:PATH = $toolBinDirectory + ';' + $env:PATH
     $installedSpecKitVersion = $null
@@ -292,23 +351,26 @@ function Invoke-Setup {
         if ([string]$toolLine -match '^specify-cli v(\S+)') { $installedSpecKitVersion = $Matches[1]; break }
     }
 
-    if ($installedSpecKitVersion -eq $script:SpecKitVersion -and (Get-PinnedSpecifyVersion)) {
-        Write-Ok "specify-cli $script:SpecKitVersion is already installed."
+    $usesPinnedPython = Test-SpecifyUsesPinnedPython
+    if ($installedSpecKitVersion -eq $script:SpecKitVersion -and $usesPinnedPython -and (Get-PinnedSpecifyVersion)) {
+        Write-Ok "specify-cli $script:SpecKitVersion is already installed on Python $script:PythonVersion."
     } else {
         if ($installedSpecKitVersion -and $installedSpecKitVersion -ne $script:SpecKitVersion) {
             Write-Warn "specify-cli $installedSpecKitVersion is installed. Replacing it with $script:SpecKitVersion, the version the workshop uses."
+        } elseif ($installedSpecKitVersion -and -not $usesPinnedPython) {
+            Write-Warn "specify-cli runs on another Python. Installing it again on Python $script:PythonVersion."
         }
         # --force replaces another version, a broken tool environment, and a specify command another
         # installer left in uv's bin directory.
-        Write-Info "Installing specify-cli $script:SpecKitVersion from GitHub. The first time this can take a few minutes..."
+        Write-Info "Installing specify-cli $script:SpecKitVersion from GitHub on Python $script:PythonVersion. The first time this can take a few minutes..."
         $global:LASTEXITCODE = 1
-        & uv tool install --force specify-cli --from $script:SpecKitSource | Out-Host
+        & uv tool install --force specify-cli --python $script:PythonVersion --from $script:SpecKitSource | Out-Host
         if ($LASTEXITCODE -ne 0) {
             Write-ErrorMessage 'Installing the Spec Kit CLI failed. Check your internet connection (or HTTPS_PROXY behind a proxy).'
             Show-ManualInstallHelp
             $script:SetupExitCode = 1; return
         }
-        Write-Ok "specify-cli $script:SpecKitVersion installed."
+        Write-Ok "specify-cli $script:SpecKitVersion installed on Python $script:PythonVersion."
     }
 
     $specifyVersionOutput = Get-PinnedSpecifyVersion
@@ -348,8 +410,8 @@ function Invoke-Setup {
     }
     if (-not (Test-PathListContains $specifyDirectory $script:StartingPath)) { $needsNewWindow = $true }
 
-    # --- 3. Spec Kit in this folder -------------------------------------------
-    Write-Step '3/3 Spec Kit in this folder'
+    # --- 4. Spec Kit in this folder -------------------------------------------
+    Write-Step '4/4 Spec Kit in this folder'
     # A second run leaves .specify alone: init --force would overwrite a constitution the participant already wrote.
     if (Test-Path -LiteralPath '.specify') {
         Write-Ok 'This folder already has .specify, so specify init is skipped.'

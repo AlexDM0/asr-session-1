@@ -28,7 +28,8 @@ if "%SETUP_EXIT_CODE%"=="0" (
   echo Setup did not finish. Read the messages above.
   echo If PowerShell refused to run setup.ps1, show this window to a trainer.
   echo With uv already installed, you can also run:
-  echo     uv tool install --force specify-cli --from https://github.com/github/spec-kit/archive/refs/tags/v1.1.3.zip
+  echo     uv python install 3.13 --default
+  echo     uv tool install --force specify-cli --python 3.13 --from https://github.com/github/spec-kit/archive/refs/tags/v1.1.3.zip
   echo Press any key to close this window.
 )
 pause >nul
