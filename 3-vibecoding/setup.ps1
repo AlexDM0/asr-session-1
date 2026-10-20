@@ -5,8 +5,7 @@
 
 .DESCRIPTION
   1. uv: checks that it works, installs a pinned uv release from GitHub when it is missing
-  2. Python 3.13 through uv, as the python and python3 of new windows: Spec Kit's skills run
-     python3, so it goes before the Microsoft Store python3 in the user PATH
+  2. Python 3.13 through uv, as the python and python3 of new windows
   3. the Spec Kit CLI from GitHub at the pinned tag, on Python 3.13:
      uv tool install specify-cli --python 3.13 --from <tag archive>
   4. puts specify on the PATH of new windows and sets up Spec Kit in this folder:
@@ -126,13 +125,8 @@ function Test-SpecifyUsesPinnedPython {
 
 # The PATH a new window starts with, read from the registry with cmdlets that also work when
 # PowerShell is locked down.
-# The PATH of every user, which comes before the user PATH in a new window.
-function Get-MachinePath {
-    return (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' -Name Path -ErrorAction SilentlyContinue).Path
-}
-
 function Get-PersistedPath {
-    $machinePath = Get-MachinePath
+    $machinePath = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' -Name Path -ErrorAction SilentlyContinue).Path
     $userPath = (Get-ItemProperty -LiteralPath 'HKCU:\Environment' -Name Path -ErrorAction SilentlyContinue).Path
     return (@($machinePath, $userPath) | Where-Object { $_ }) -join ';'
 }
@@ -152,16 +146,12 @@ function Test-PathListContains($directory, $pathList) {
 }
 
 # Adds $directory to the user PATH in the registry, keeping %VARIABLE% entries as they are, and
-# tells Windows so windows opened from now on see it. -First puts it in front, also when it is
-# already further down, so it wins from the other folders in the user PATH.
-function Add-UserPathEntry($directory, [switch]$First) {
+# tells Windows so windows opened from now on see it.
+function Add-UserPathEntry($directory) {
     $environmentKey = Get-Item -LiteralPath 'HKCU:\Environment'
     $userPath = [string]$environmentKey.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
-    if (-not $First -and (Test-PathListContains $directory $userPath)) { return }
-    $normalizedDirectory = $directory.TrimEnd('\', '/')
-    $otherEntries = @($userPath -split ';' | Where-Object { $_ -and $_.TrimEnd('\', '/') -ine $normalizedDirectory })
-    $newUserPath = if ($First) { (@($directory) + $otherEntries) -join ';' } else { (@($otherEntries) + @($directory)) -join ';' }
-    if ($newUserPath -eq $userPath.TrimEnd(';')) { return }
+    if (Test-PathListContains $directory $userPath) { return }
+    $newUserPath = if ($userPath) { $userPath.TrimEnd(';') + ';' + $directory } else { $directory }
     Set-ItemProperty -LiteralPath 'HKCU:\Environment' -Name Path -Value $newUserPath -Type ExpandString
     # Clearing a variable through .NET broadcasts the environment change that Set-ItemProperty does not.
     [Environment]::SetEnvironmentVariable('DuinzichtSetupPathRefresh', $null, 'User')
@@ -350,45 +340,6 @@ function Invoke-Setup {
     }
     if (-not (Test-PathListContains $pythonBinDirectory $script:StartingPath)) { $needsNewWindow = $true }
     Write-Ok "Python $script:PythonVersion is installed."
-
-    # Spec Kit's --script py skills run python3, so a new window must find this Python under that
-    # name. Windows 10 and 11 put a python3.exe from the Microsoft Store in WindowsApps, which comes
-    # earlier in the user PATH and only says that Python was not found.
-    $python3Path = Join-Path $pythonBinDirectory 'python3.exe'
-    if (-not (Test-Path -LiteralPath $python3Path)) {
-        Write-ErrorMessage "uv did not put python3.exe in $pythonBinDirectory."
-        Show-ManualInstallHelp
-        $script:SetupExitCode = 1; return
-    }
-    $newWindowPath = Get-PersistedPath
-    if (-not $newWindowPath) { $newWindowPath = $script:StartingPath }
-    $python3InNewWindow = Find-CommandInPathList 'python3' $newWindowPath
-    if ($python3InNewWindow -and ($python3InNewWindow -ine $python3Path)) {
-        $python3ForEveryUser = Find-CommandInPathList 'python3' (Get-MachinePath)
-        if ($python3ForEveryUser) {
-            Write-Warn "Another python3 comes first for every user of this computer ($python3ForEveryUser), so the Spec Kit skills run that one."
-            Write-Info 'Ask IT to remove it from the system PATH, or tell the agent to run the Spec Kit scripts with python instead of python3.'
-        } else {
-            Write-Info "A new window finds another python3 first ($python3InNewWindow). Moving $pythonBinDirectory to the front of your user PATH..."
-            $pathUpdated = $false
-            if ($script:IsFullLanguage) {
-                try { Add-UserPathEntry $pythonBinDirectory -First; $pathUpdated = $true } catch { }
-            }
-            if ($pathUpdated) {
-                Write-Ok 'Moved. It takes effect in new windows.'
-                $needsNewWindow = $true
-            } else {
-                Write-Warn "Could not move it. Turn off the python3 alias instead: Settings, Apps, Advanced app settings, App execution aliases."
-            }
-        }
-    }
-    $python3VersionLines = Invoke-NativeForOutput $python3Path @('--version')
-    if (-not $python3VersionLines -or -not (([string]$python3VersionLines[0]).Trim() -like "Python $script:PythonVersion.*")) {
-        Write-ErrorMessage "$python3Path does not run as Python $script:PythonVersion."
-        Show-ManualInstallHelp
-        $script:SetupExitCode = 1; return
-    }
-    Write-Ok "python3 is Python $script:PythonVersion ($python3Path)."
 
     # --- 3. The Spec Kit CLI -------------------------------------------------
     Write-Step "3/4 The Spec Kit CLI (specify-cli $script:SpecKitVersion)"

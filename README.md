@@ -2,7 +2,7 @@
 
 One folder per workshop round. Run the setup in this folder first: it removes this folder's `.git`
 and makes each round's folder its own git repository, so the agent does not see your earlier rounds.
-It also installs uv, Python 3.13 as the default `python` and `python3`, and the Spec Kit CLI on it that round 3 needs.
+It also installs uv, Python 3.13 as the default `python`, and the Spec Kit CLI on it that round 3 needs.
 
 | On | Do |
 |---|---|
