@@ -7,7 +7,7 @@ Build the same app as in round 1, with the same first prompt. The only differenc
 1. Open this folder in VS Code. Do not reuse your round 1 folder: the agent should not see your first attempt.
 2. Open Copilot Chat in agent mode. If a chat from round 1 is still open, type `/clear` to start an empty one.
 3. Paste your first prompt from round 1, and add: "Use the grill-me skill before you build anything."
-4. Answer the agent's questions. Every question comes with its recommendation; accept it or choose differently.
+4. Answer the agent's questions. Every question comes with its recommendation; accept it or choose differently. When it asks about the technology, choose a standalone web page.
 5. When the questions are done, let it build. Run it and try it.
 
 ## The skill
@@ -16,6 +16,7 @@ The skill lives in `.github/skills/grill-me/SKILL.md`. Open it: a skill is just 
 
 ## Rules
 
+- Build a standalone web page: one HTML file you open in the browser, with no server, no database and nothing to install.
 - Fictional data only. No customer data and no personal data in a prompt.
 
 ## Afterwards
